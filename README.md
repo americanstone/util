@@ -35,7 +35,7 @@ for more details about how to contribute.
 An example SBT dependency string for the `util-core` library would look like this:
 
 ```scala
-val utilCore = "com.twitter" %% "util-core" % "21.3.0"
+val utilCore = "com.twitter" %% "util-core" % "21.6.0"
 ```
 
 # Units

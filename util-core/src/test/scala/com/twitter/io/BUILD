@@ -1,7 +1,10 @@
 junit_tests(
     sources = ["*.scala"],
     compiler_option_sets = ["fatal_warnings"],
-    tags = ["non-exclusive"],
+    tags = [
+        "bazel-compatible",
+        "non-exclusive",
+    ],
     dependencies = [
         "3rdparty/jvm/junit",
         "3rdparty/jvm/org/mockito:mockito-core",
@@ -14,5 +17,6 @@ junit_tests(
         "util/util-core/src/main/scala/com/twitter/concurrent",
         "util/util-core/src/main/scala/com/twitter/conversions",
         "util/util-core/src/main/scala/com/twitter/io",
+        "util/util-core/src/test/resources",
     ],
 )

@@ -1,7 +1,10 @@
 import scoverage.ScoverageKeys
 
+Global / onChangedBuildSource := ReloadOnSourceChanges
+Global / excludeLintKeys += scalacOptions // might be actually unused in util-doc module but not sure
+
 // All Twitter library releases are date versioned as YY.MM.patch
-val releaseVersion = "21.4.0-SNAPSHOT"
+val releaseVersion = "21.7.0-SNAPSHOT"
 
 val slf4jVersion = "1.7.30"
 val jacksonVersion = "2.11.2"
@@ -18,9 +21,9 @@ val zkDependency = "org.apache.zookeeper" % "zookeeper" % zkVersion excludeAll (
 )
 
 val guavaLib = "com.google.guava" % "guava" % "25.1-jre"
-val caffeineLib = "com.github.ben-manes.caffeine" % "caffeine" % "2.8.5"
+val caffeineLib = "com.github.ben-manes.caffeine" % "caffeine" % "2.9.1"
 val jsr305Lib = "com.google.code.findbugs" % "jsr305" % "2.0.1"
-val scalacheckLib = "org.scalacheck" %% "scalacheck" % "1.14.3" % "test"
+val scalacheckLib = "org.scalacheck" %% "scalacheck" % "1.15.4" % "test"
 val slf4jApi = "org.slf4j" % "slf4j-api" % slf4jVersion
 
 def travisTestJavaOptions: Seq[String] = {
@@ -78,15 +81,15 @@ def jdk11GcJavaOptions: Seq[String] = {
 }
 
 val defaultProjectSettings = Seq(
-  scalaVersion := "2.12.12",
-  crossScalaVersions := Seq("2.12.12", "2.13.1")
+  scalaVersion := "2.13.6",
+  crossScalaVersions := Seq("2.12.12", "2.13.6")
 )
 
 val baseSettings = Seq(
   version := releaseVersion,
   organization := "com.twitter",
   // Workaround for a scaladoc bug which causes it to choke on empty classpaths.
-  unmanagedClasspath in Compile += Attributed.blank(new java.io.File("doesnotexist")),
+  Compile / unmanagedClasspath += Attributed.blank(new java.io.File("doesnotexist")),
   libraryDependencies ++= Seq(
     "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.2",
     // See https://www.scala-sbt.org/0.13/docs/Testing.html#JUnit
@@ -94,11 +97,11 @@ val baseSettings = Seq(
     "org.scalatest" %% "scalatest" % "3.1.2" % "test",
     "org.scalatestplus" %% "junit-4-12" % "3.1.2.0" % "test"
   ),
-  fork in Test := true, // We have to fork to get the JavaOptions
+  Test / fork := true, // We have to fork to get the JavaOptions
   // Workaround for cross building HealthyQueue.scala, which is not compatible between
   // 2.12- with 2.13+.
-  unmanagedSourceDirectories in Compile += {
-    val sourceDir = (sourceDirectory in Compile).value
+  Compile / unmanagedSourceDirectories += {
+    val sourceDir = (Compile / sourceDirectory).value
     CrossVersion.partialVersion(scalaVersion.value) match {
       case Some((2, n)) if n >= 13 => sourceDir / "scala-2.13+"
       case _ => sourceDir / "scala-2.12-"
@@ -121,20 +124,20 @@ val baseSettings = Seq(
   // Note: Use -Xlint rather than -Xlint:unchecked when TestThriftStructure
   // warnings are resolved
   javacOptions ++= Seq("-Xlint:unchecked", "-source", "1.8", "-target", "1.8"),
-  javacOptions in doc := Seq("-source", "1.8"),
+  doc / javacOptions := Seq("-source", "1.8"),
   javaOptions ++= Seq(
     "-Djava.net.preferIPv4Stack=true",
     "-XX:+AggressiveOpts",
     "-server"
   ),
   javaOptions ++= gcJavaOptions,
-  javaOptions in Test ++= travisTestJavaOptions,
+  Test / javaOptions ++= travisTestJavaOptions,
   // -a: print stack traces for failing asserts
   testOptions += Tests.Argument(TestFrameworks.JUnit, "-a"),
   // This is bad news for things like com.twitter.util.Time
-  parallelExecution in Test := false,
+  Test / parallelExecution := false,
   // Sonatype publishing
-  publishArtifact in Test := false,
+  Test / publishArtifact := false,
   pomIncludeRepository := { _ => false },
   publishMavenStyle := true,
   publishConfiguration := publishConfiguration.value.withOverwrite(true),
@@ -172,7 +175,7 @@ val baseSettings = Seq(
 val sharedSettings = defaultProjectSettings ++ baseSettings
 
 lazy val noPublishSettings = Seq(
-  skip in publish := true
+  publish / skip := true
 )
 
 lazy val util = Project(
@@ -184,7 +187,7 @@ lazy val util = Project(
     sharedSettings ++
       noPublishSettings ++
       Seq(
-        unidocProjectFilter in (ScalaUnidoc, unidoc) := inAnyProject -- inProjects(utilBenchmark)
+        ScalaUnidoc / unidoc / unidocProjectFilter := inAnyProject -- inProjects(utilBenchmark)
       )
   ).aggregate(
     utilApp,
@@ -198,6 +201,8 @@ lazy val util = Project(
     utilDoc,
     utilFunction,
     utilHashing,
+    utilJacksonAnnotations,
+    utilJackson,
     utilJvm,
     utilLint,
     utilLogging,
@@ -213,6 +218,7 @@ lazy val util = Project(
     utilTest,
     utilThrift,
     utilTunable,
+    utilValidator,
     utilZk,
     utilZkTest
   )
@@ -248,7 +254,15 @@ lazy val utilBenchmark = Project(
     JmhPlugin
   ).settings(
     name := "util-benchmark"
-  ).dependsOn(utilCore, utilHashing, utilJvm, utilReflect, utilStats)
+  ).dependsOn(
+    utilCore,
+    utilHashing,
+    utilJackson,
+    utilJvm,
+    utilReflect,
+    utilStats,
+    utilValidator
+  )
 
 lazy val utilCache = Project(
   id = "util-cache",
@@ -302,7 +316,7 @@ lazy val utilCore = Project(
     name := "util-core",
     // Moved some code to 'concurrent-extra' to conform to Pants' 1:1:1 principle (https://www.pantsbuild.org/build_files.html#target-granularity)
     // so that util-core would work better for Pants projects in IntelliJ.
-    unmanagedSourceDirectories in Compile += baseDirectory.value / "concurrent-extra",
+    Compile / unmanagedSourceDirectories += baseDirectory.value / "concurrent-extra",
     libraryDependencies ++= Seq(
       caffeineLib % "test",
       scalacheckLib,
@@ -312,7 +326,7 @@ lazy val utilCore = Project(
       "org.scalatestplus" %% "mockito-3-3" % "3.1.2.0" % "test",
       "org.scalatestplus" %% "scalacheck-1-14" % "3.1.2.0" % "test"
     ),
-    resourceGenerators in Compile += Def.task {
+    Compile / resourceGenerators += Def.task {
       val projectName = name.value
       val file = resourceManaged.value / "com" / "twitter" / projectName / "build.properties"
       val buildRev = scala.sys.process.Process("git" :: "rev-parse" :: "HEAD" :: Nil).!!.trim
@@ -322,10 +336,10 @@ lazy val utilCore = Project(
       IO.write(file, contents)
       Seq(file)
     }.taskValue,
-    sources in (Compile, doc) := {
+    Compile / doc / sources := {
       // Monitors.java causes "not found: type Monitor$" (CSL-5034)
       // so exclude it from the sources used for scaladoc
-      val previous = (sources in (Compile, doc)).value
+      val previous = (Compile / doc / sources).value
       previous.filterNot(file => file.getName() == "Monitors.java")
     }
   ).dependsOn(utilFunction)
@@ -338,8 +352,8 @@ lazy val utilDoc = Project(
   ).settings(
     sharedSettings ++
       noPublishSettings ++ Seq(
-      scalacOptions in doc ++= Seq("-doc-title", "Util", "-doc-version", version.value),
-      includeFilter in Sphinx := ("*.html" | "*.png" | "*.svg" | "*.js" | "*.css" | "*.gif" | "*.txt")
+      doc / scalacOptions ++= Seq("-doc-title", "Util", "-doc-version", version.value),
+      Sphinx / includeFilter := ("*.html" | "*.png" | "*.svg" | "*.js" | "*.css" | "*.gif" | "*.txt")
     ))
 
 lazy val utilFunction = Project(
@@ -372,6 +386,37 @@ lazy val utilHashing = Project(
       "org.scalatestplus" %% "scalacheck-1-14" % "3.1.2.0" % "test"
     )
   ).dependsOn(utilCore % "test")
+
+lazy val utilJacksonAnnotations = Project(
+  id = "util-jackson-annotations",
+  base = file("util-jackson-annotations")
+).settings(
+    sharedSettings
+  ).settings(
+    name := "util-jackson-annotations"
+  )
+
+lazy val utilJackson = Project(
+  id = "util-jackson",
+  base = file("util-jackson")
+).settings(
+    sharedSettings
+  ).settings(
+    name := "util-jackson",
+    libraryDependencies ++= Seq(
+      "com.fasterxml.jackson.core" % "jackson-core" % jacksonVersion,
+      "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
+      "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % jacksonVersion,
+      "com.fasterxml.jackson.datatype" % "jackson-datatype-jsr310" % jacksonVersion,
+      "com.fasterxml.jackson.module" %% "jackson-module-scala" % jacksonVersion exclude ("com.google.guava", "guava"),
+      "jakarta.validation" % "jakarta.validation-api" % "3.0.0",
+      "org.json4s" %% "json4s-core" % "3.6.7",
+      "com.fasterxml.jackson.core" % "jackson-annotations" % jacksonVersion % "test",
+      scalacheckLib,
+      "org.scalatestplus" %% "scalacheck-1-14" % "3.1.2.0" % "test",
+      "org.slf4j" % "slf4j-simple" % slf4jVersion % "test"
+    )
+  ).dependsOn(utilCore, utilJacksonAnnotations, utilMock % Test, utilReflect, utilSlf4jApi, utilValidator)
 
 lazy val utilJvm = Project(
   id = "util-jvm",
@@ -556,6 +601,26 @@ lazy val utilTunable = Project(
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % jacksonVersion exclude ("com.google.guava", "guava")
     )
   ).dependsOn(utilApp, utilCore)
+
+lazy val utilValidator = Project(
+  id = "util-validator",
+  base = file("util-validator")
+).settings(
+    sharedSettings
+  ).settings(
+    name := "util-validator",
+    libraryDependencies ++= Seq(
+      caffeineLib,
+      scalacheckLib,
+      "jakarta.validation" % "jakarta.validation-api" % "3.0.0",
+      "org.hibernate.validator" % "hibernate-validator" % "7.0.1.Final",
+      "org.glassfish" % "jakarta.el" % "4.0.0",
+      "org.json4s" %% "json4s-core" % "3.6.7",
+      "com.fasterxml.jackson.core" % "jackson-annotations" % jacksonVersion % "test",
+      "org.scalatestplus" %% "scalacheck-1-14" % "3.1.2.0" % "test",
+      "org.slf4j" % "slf4j-simple" % slf4jVersion % "test"
+    )
+  ).dependsOn(utilCore, utilReflect, utilSlf4jApi)
 
 lazy val utilZk = Project(
   id = "util-zk",

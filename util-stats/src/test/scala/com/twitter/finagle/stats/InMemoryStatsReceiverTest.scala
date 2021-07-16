@@ -1,5 +1,6 @@
 package com.twitter.finagle.stats
 
+import com.twitter.finagle.stats.MetricBuilder.{CounterType, GaugeType, HistogramType}
 import com.twitter.finagle.stats.exp.{Expression, ExpressionSchema}
 import java.io.{ByteArrayOutputStream, PrintStream}
 import java.nio.charset.StandardCharsets
@@ -124,7 +125,8 @@ class InMemoryStatsReceiverTest extends AnyFunSuite with Eventually with Integra
     val stats = new InMemoryStatsReceiver()
     ExpressionSchema(
       "a",
-      Expression(CounterSchema(MetricBuilder(name = Seq("counter"), statsReceiver = stats))))
+      Expression(
+        MetricBuilder(name = Seq("counter"), metricType = CounterType, statsReceiver = stats)))
     stats.expressions.contains("a")
   }
 
@@ -326,11 +328,11 @@ class InMemoryStatsReceiverTest extends AnyFunSuite with Eventually with Integra
   test("creating metrics stores their metadata and clear()ing should remove that metadata") {
     val stats = new InMemoryStatsReceiver()
     stats.addGauge("coolGauge") { 3 }
-    assert(stats.schemas(Seq("coolGauge")).isInstanceOf[MetricSchema])
+    assert(stats.schemas(Seq("coolGauge")).isInstanceOf[MetricBuilder])
     stats.counter("sweetCounter")
-    assert(stats.schemas(Seq("sweetCounter")).isInstanceOf[MetricSchema])
+    assert(stats.schemas(Seq("sweetCounter")).isInstanceOf[MetricBuilder])
     stats.stat("radHisto")
-    assert(stats.schemas(Seq("radHisto")).isInstanceOf[MetricSchema])
+    assert(stats.schemas(Seq("radHisto")).isInstanceOf[MetricBuilder])
 
     stats.clear()
     assert(stats.schemas.isEmpty)
@@ -353,38 +355,38 @@ class InMemoryStatsReceiverTest extends AnyFunSuite with Eventually with Integra
       assert(parts.length == 3)
       assert(
         parts(
-          0) == "coolGauge GaugeSchema(MetricBuilder(false, No description provided, Unspecified, NoRoleSpecified, Verbosity(default), None, coolGauge, List(), None, Vector(), InMemoryStatsReceiver))")
+          0) == "coolGauge MetricBuilder(false, No description provided, Unspecified, NoRoleSpecified, Verbosity(default), None, coolGauge, List(), None, Vector(), GaugeType, InMemoryStatsReceiver)")
       assert(
         parts(
-          1) == "rad/histo HistogramSchema(MetricBuilder(false, No description provided, Unspecified, NoRoleSpecified, Verbosity(default), None, rad/histo, List(), None, Vector(), InMemoryStatsReceiver/rad))")
+          1) == "rad/histo MetricBuilder(false, No description provided, Unspecified, NoRoleSpecified, Verbosity(default), None, rad/histo, List(), None, Vector(), HistogramType, InMemoryStatsReceiver/rad)")
       assert(
         parts(
-          2) == "sweet/counter CounterSchema(MetricBuilder(false, No description provided, Unspecified, NoRoleSpecified, Verbosity(default), None, sweet/counter, List(), None, Vector(), InMemoryStatsReceiver))")
+          2) == "sweet/counter MetricBuilder(false, No description provided, Unspecified, NoRoleSpecified, Verbosity(default), None, sweet/counter, List(), None, Vector(), CounterType, InMemoryStatsReceiver)")
     } finally {
       ps.close()
     }
   }
 
-  test("expression are reloaded with fully scoped names") {
+  test("expressions can be hydrated from metadata that metrics use") {
     val sr = new InMemoryStatsReceiver
 
-    val aSchema = CounterSchema(MetricBuilder(name = Seq("a"), statsReceiver = sr).withKernel)
-    val bSchema = HistogramSchema(MetricBuilder(name = Seq("b"), statsReceiver = sr).withKernel)
-    val cSchema = GaugeSchema(MetricBuilder(name = Seq("c"), statsReceiver = sr).withKernel)
+    val aCounter = sr.scope("test").counter("a")
+    val bHisto = sr.scope("test").stat("b")
+    val cGauge = sr.scope("test").addGauge("c") { 1 }
 
     val expression = ExpressionSchema(
       "test_expression",
-      Expression(aSchema).plus(Expression(bSchema, Left(Expression.Min)).plus(Expression(cSchema))))
-      .register()
-
-    val aCounter = sr.scope("test").counter(aSchema)
-    val bHisto = sr.scope("test").stat(bSchema)
-    val cGauge = sr.scope(("test")).addGauge(cSchema) { 1 }
+      Expression(aCounter.metadata).plus(Expression(bHisto.metadata, Left(Expression.Min))
+        .plus(Expression(cGauge.metadata)))
+    ).register()
 
     // what we expected as hydrated metric builders
-    val aaSchema = CounterSchema(MetricBuilder(name = Seq("test", "a"), statsReceiver = sr))
-    val bbSchema = HistogramSchema(MetricBuilder(name = Seq("test", "b"), statsReceiver = sr))
-    val ccSchema = GaugeSchema(MetricBuilder(name = Seq("test", "c"), statsReceiver = sr))
+    val aaSchema =
+      MetricBuilder(name = Seq("test", "a"), metricType = CounterType, statsReceiver = sr)
+    val bbSchema =
+      MetricBuilder(name = Seq("test", "b"), metricType = HistogramType, statsReceiver = sr)
+    val ccSchema =
+      MetricBuilder(name = Seq("test", "c"), metricType = GaugeType, statsReceiver = sr)
 
     val expected_expression = ExpressionSchema(
       "test_expression",

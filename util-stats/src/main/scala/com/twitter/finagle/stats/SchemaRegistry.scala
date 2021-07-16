@@ -1,6 +1,6 @@
 package com.twitter.finagle.stats
 
-import com.twitter.finagle.stats.exp.ExpressionSchema
+import com.twitter.finagle.stats.exp.{ExpressionSchema, ExpressionSchemaKey}
 
 /**
  * Interface used via the LoadService mechanism to obtain an
@@ -11,8 +11,8 @@ private[twitter] trait SchemaRegistry {
   /** Whether or not the counters are latched. */
   def hasLatchedCounters: Boolean
 
-  def schemas(): Map[String, MetricSchema]
+  def schemas(): Map[String, MetricBuilder]
 
-  def expressions(): Map[String, ExpressionSchema]
+  def expressions(): Map[ExpressionSchemaKey, ExpressionSchema]
 
 }

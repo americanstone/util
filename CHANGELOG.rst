@@ -7,6 +7,67 @@ Note that ``PHAB_ID=#`` and ``RB_ID=#`` correspond to associated messages in com
 Unreleased
 ----------
 
+New Features
+~~~~~~~~~~~~
+
+* util-app: Introduce a new `Command` class which provides a `Reader` interface to the output
+  of a shell command. ``PHAB_ID=D686134``
+
+Runtime Behavior Changes
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+* util: Update ScalaCheck to version 1.15.4 ``PHAB_ID=D691691``
+
+21.6.0
+------
+
+New Features
+~~~~~~~~~~~~
+
+* util-core: Add `ClasspathResource`, a utility for loading classpath resources as an
+  optional `InputStream`. ``PHAB_ID=D687324``
+
+* util-jackson: Add `com.twitter.util.jackson.YAML` for YAML serde operations with a
+  default configured `ScalaObjectMapper.` Add more methods to `com.twitter.util.jackson.JSON`
+  ``PHAB_ID=D687327``
+
+* util-jackson: Introduce a new library for JSON serialization and deserialization based on the
+  Jackson integration in `Finatra <https://twitter.github.io/finatra/user-guide/json/index.html>`__.
+
+  This includes a custom case class deserializer which "fails slow" to collect all mapping failures
+  for error reporting. This deserializer is also natively integrated with the util-validator library
+  to provide for performing case class validations during deserialization. ``PHAB_ID=D664962``
+
+Breaking API Changes
+~~~~~~~~~~~~~~~~~~~~
+
+* util-stats: Removed MetricSchema trait (CounterSchema, GaugeSchema and HistogramSchema).
+  StatReceiver derived classes use MetricBuilder directly to create counters, gauges and stats.
+  ``PHAB_ID=D668739``
+
+Runtime Behavior Changes
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+* util-cache: Update Caffeine cache library to version 2.9.1 ``PHAB_ID=D660908``
+
+21.5.0
+------
+
+New Features
+~~~~~~~~~~~~
+
+* util-validator: Introduce new library for case class validations (akin to Java bean validation)
+  which follows the Jakarta Bean Validation specification (https://beanvalidation.org/) by wrapping
+  the Hibernate Validator library and thus supports `jakarta.validation.Constraint` annotations and
+  validators for annotating and validating fields of Scala case classes. ``PHAB_ID=D638603``
+
+* util-app: Introduce a Java-friendly API `c.t.app.App#runOnExit(Runnable)` and
+  `c.t.app.App#runOnExitLast(Runnable)` to allow Java 8 users to call `c.t.app.App#runOnExit`
+  and `c.t.app.App#runOnExitLast` with lambda expressions. ``PHAB_ID=D511536``
+
+21.4.0
+------
+
 Runtime Behavior Changes
 ~~~~~~~~~~~~~~~~~~~~~~~~
 

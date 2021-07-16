@@ -1,15 +1,8 @@
 package com.twitter.finagle.stats.exp
 
+import com.twitter.finagle.stats.MetricBuilder.HistogramType
 import com.twitter.finagle.stats.exp.Expression.HistogramComponent
-import com.twitter.finagle.stats.{
-  CounterSchema,
-  GaugeSchema,
-  HistogramSchema,
-  MetricBuilder,
-  MetricSchema,
-  StatsReceiver
-}
-import java.util.concurrent.ConcurrentHashMap
+import com.twitter.finagle.stats.{Metadata, MetricBuilder, StatsReceiver}
 import scala.annotation.varargs
 
 private[twitter] object Expression {
@@ -27,9 +20,10 @@ private[twitter] object Expression {
         case (acc, expr) =>
           getStatsReceivers(expr) ++ acc
       }
-    case MetricExpression(schema) => Set(schema.metricBuilder.statsReceiver)
-    case HistogramExpression(schema, _) => Set(schema.metricBuilder.statsReceiver)
+    case MetricExpression(metricBuilder) => Set(metricBuilder.statsReceiver)
+    case HistogramExpression(metricBuilder, _) => Set(metricBuilder.statsReceiver)
     case ConstantExpression(_) => Set.empty
+    case NoExpression => Set.empty
   }
 
   /**
@@ -42,43 +36,31 @@ private[twitter] object Expression {
    * @param component the histogram component either a [[HistogramComponent]] for Left
    *                  or a percentile in Double for Right.
    */
-  def apply(schema: HistogramSchema, component: Either[HistogramComponent, Double]) =
-    HistogramExpression(schema, component)
+  def apply(
+    metadata: Metadata,
+    component: Either[HistogramComponent, Double]
+  ): Expression = {
+    metadata.toMetricBuilder match {
+      case Some(metricBuilder) =>
+        require(
+          metricBuilder.metricType == HistogramType,
+          "this method is for creating histogram expression")
+        HistogramExpression(metricBuilder, component)
+      case None =>
+        NoExpression
+    }
+  }
 
   /**
    * Create an single expression wrapping a counter or gauge.
    */
-  def apply(schema: MetricSchema): Expression = {
-    require(!schema.isInstanceOf[HistogramSchema], "provide a component for histogram")
-    MetricExpression(schema)
-  }
-
-  // utility methods shared by Metrics.scala and InMemoryStatsReceiver
-  private[stats] def replaceExpression(
-    expression: Expression,
-    metricBuilders: ConcurrentHashMap[Int, MetricBuilder]
-  ): Expression = {
-    expression match {
-      case f @ FunctionExpression(_, exprs) =>
-        f.copy(exprs = exprs.map(replaceExpression(_, metricBuilders)))
-      case m @ MetricExpression(schema) if schema.metricBuilder.kernel.isDefined =>
-        val builder = metricBuilders.get(schema.metricBuilder.kernel.get)
-        if (builder != null) m.copy(schema = reformSchema(schema, builder))
-        else m
-      case h @ HistogramExpression(schema, _) if schema.metricBuilder.kernel.isDefined =>
-        val builder = metricBuilders.get(schema.metricBuilder.kernel.get)
-        if (builder != null)
-          h.copy(schema = reformSchema(schema, builder).asInstanceOf[HistogramSchema])
-        else h
-      case otherExpression => otherExpression
-    }
-  }
-
-  private[this] def reformSchema(schema: MetricSchema, builder: MetricBuilder): MetricSchema = {
-    schema match {
-      case CounterSchema(_) => CounterSchema(builder)
-      case HistogramSchema(_) => HistogramSchema(builder)
-      case GaugeSchema(_) => GaugeSchema(builder)
+  def apply(metadata: Metadata): Expression = {
+    metadata.toMetricBuilder match {
+      case Some(metricBuilder) =>
+        require(metricBuilder.metricType != HistogramType, "provide a component for histogram")
+        MetricExpression(metricBuilder)
+      case None =>
+        NoExpression
     }
   }
 }
@@ -87,14 +69,14 @@ private[twitter] object Expression {
  * Metrics with their arithmetical(or others) calculations
  */
 private[twitter] sealed trait Expression {
-  def plus(other: Expression): Expression = FunctionExpression("plus", Seq(this, other))
+  final def plus(other: Expression): Expression = func("plus", other)
 
-  def minus(other: Expression): Expression = FunctionExpression("minus", Seq(this, other))
+  final def minus(other: Expression): Expression = func("minus", other)
 
-  def divide(other: Expression): Expression = FunctionExpression("divide", Seq(this, other))
+  final def divide(other: Expression): Expression = func("divide", other)
 
-  def multiply(other: Expression): Expression =
-    FunctionExpression("multiply", Seq(this, other))
+  final def multiply(other: Expression): Expression =
+    func("multiply", other)
 
   @varargs
   def func(name: String, rest: Expression*): Expression =
@@ -116,13 +98,18 @@ case class FunctionExpression private (fnName: String, exprs: Seq[Expression]) e
 /**
  * Represents the leaf metrics
  */
-case class MetricExpression private (schema: MetricSchema) extends Expression
+case class MetricExpression private (metricBuilder: MetricBuilder) extends Expression
 
 /**
  * Represent a histogram expression with specified component, for example the average, or a percentile
  * @param component either a [[HistogramComponent]] or a percentile in Double
  */
 case class HistogramExpression private (
-  schema: HistogramSchema,
+  metricBuilder: MetricBuilder,
   component: Either[HistogramComponent, Double])
     extends Expression
+
+case object NoExpression extends Expression {
+  @varargs
+  override def func(name: String, rest: Expression*): Expression = NoExpression
+}
